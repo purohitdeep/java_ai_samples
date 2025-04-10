@@ -37,9 +37,13 @@ public class AiController {
 
     @GetMapping
     public String getAiResponse(@RequestParam(defaultValue = "What is the meaning of life?") String message) {
-        return ollamaClient.prompt()
+        String response = ollamaClient.prompt()
                 .user(message)
                 .call().content();
+        String color = "\u001B[34m";
+        String reset = "\u001B[0m";
+        System.out.println(color + response + reset);
+        return response;
     }
 
     @GetMapping("/conversation")
@@ -77,51 +81,63 @@ public class AiController {
 
     @GetMapping("/sentence-by-sentence-story")
     public String createSentenceBySentenceStory(@RequestParam(defaultValue = "a magical adventure") String topic) {
-        StringBuilder storyBuilder = new StringBuilder("Topic: " + topic + "\n\n");
+        // Initialize story with topic
+        StringBuilder storyBuilder = new StringBuilder("Topic: ").append(topic).append("\n\n");
+        StringBuilder currentStory = new StringBuilder(); // More efficient for concatenation
         boolean isLmStudioTurn = true;
 
         System.out.println("######## " + topic + " ########");
 
-        String currentStory = ""; // what we pass in every turn
+        // Pre-process the topic substitution in prompts once
+        String agentLPrompt = agentLStoryPrompt.replace("[TOPIC]", topic);
+        String agentOPrompt = agentOStoryPrompt.replace("[TOPIC]", topic);
 
         for (int i = 0; i < 20; i++) {
+            // Determine which agent to use
             ChatClient speaker = isLmStudioTurn ? lmStudioClient : ollamaClient;
-            String prompt = isLmStudioTurn ? agentLStoryPrompt : agentOStoryPrompt;
-            prompt = prompt.replace("[TOPIC]", topic);
+            String prompt = isLmStudioTurn ? agentLPrompt : agentOPrompt;
 
-            // System prompt stays consistent, but user prompt evolves with story
-            String userPrompt = "Story so far: \"" + currentStory.trim() + "\"\nWrite one sentence to continue the story.";
+            // Create user prompt with current story state
+            String userPrompt = "Story so far: \"" + currentStory + "\"\nWrite one sentence to continue the story.";
 
+            // Get response from the agent
             String sentence = speaker.prompt()
                     .system(prompt)
                     .user(userPrompt)
                     .call()
                     .content();
-                    //.trim();
 
-            storyBuilder.append(sentence).append(" ");
-            sentence += " ";
+            // Format and append the new sentence
+            storyBuilder.append(sentence);
 
+            // Add formatting based on content or position in story
+            boolean needsParagraphBreak = false;
+
+            // Check for paragraph break indicators
             if (sentence.contains("??")) {
+                needsParagraphBreak = true;
+            } else if (i > 0 && i % 4 == 0) {
+                needsParagraphBreak = true;
+            }
+
+            // Add paragraph break if needed
+            if (needsParagraphBreak) {
                 storyBuilder.append("\n\n");
-                sentence += "\n\n";
-            }
-            if (i > 0 && i % 4 == 0) {
-            storyBuilder.append("\n\n");
-            sentence += "\n\n";
+                currentStory.append(sentence).append("\n\n");
+            } else {
+                storyBuilder.append(" ");
+                currentStory.append(sentence).append(" ");
             }
 
-            currentStory += " " + sentence + " ";
-
-            String speakerName = isLmStudioTurn ? agentLName : agentOName;
+            // Console output with color coding
             String color = isLmStudioTurn ? "\u001B[34m" : "\u001B[32m"; // Blue or Green
-            String reset = "\u001B[0m";
+            System.out.print(color + sentence + (needsParagraphBreak ? "\n\n" : " ") + "\u001B[0m");
 
-            System.out.print(color + " " +  sentence + reset);
-
+            // Switch turns
             isLmStudioTurn = !isLmStudioTurn;
         }
 
         return storyBuilder.toString();
     }
+
 }
